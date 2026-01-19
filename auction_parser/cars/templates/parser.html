@@ -1,0 +1,1225 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Парсер аукционов</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <style>
+        .status-running { color: #0d6efd; }
+        .status-completed { color: #198754; }
+        .status-error { color: #dc3545; }
+        .stats-card { transition: all 0.3s; }
+        .stats-card:hover { transform: translateY(-5px); box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15); }
+        .car-card { transition: all 0.3s; height: 100%; }
+        .car-card:hover { transform: translateY(-3px); box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.1); }
+        .car-image { height: 200px; object-fit: cover; background: #f8f9fa; }
+        .badge-year { background: linear-gradient(45deg, #dc3545, #e35d6a); }
+        .badge-mileage { background: linear-gradient(45deg, #198754, #20c997); }
+        .badge-price { background: linear-gradient(45deg, #fd7e14, #ff922b); }
+        .nav-tabs .nav-link.active { font-weight: 600; }
+        .fade-in { animation: fadeIn 0.5s ease-in; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .filter-section { background: #f8f9fa; border-radius: 0.375rem; }
+        .search-highlight { background-color: #fff3cd; padding: 0.1rem 0.2rem; border-radius: 0.2rem; }
+        .no-results { min-height: 300px; }
+        .filter-badge { cursor: pointer; }
+        .filter-badge:hover { opacity: 0.8; }
+        .collapse-icon { transition: transform 0.3s; }
+        .collapse-icon[aria-expanded="true"] { transform: rotate(180deg); }
+        .pagination { justify-content: center; margin-top: 20px; }
+        .loading-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255, 255, 255, 0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            border-radius: 0.375rem;
+        }
+        .ajax-loading { display: none; }
+    </style>
+</head>
+<body>
+    <div class="container mt-4">
+        <div class="row">
+            <div class="col-12">
+                <h1 class="mb-4">
+                    <i class="bi bi-car-front"></i>
+                    Парсер автомобилей с аукционов
+                </h1>
+
+                <!-- Навигация -->
+                <ul class="nav nav-tabs mb-4" id="parserTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="stats-tab" data-bs-toggle="tab" data-bs-target="#stats" type="button" role="tab">
+                            <i class="bi bi-speedometer2"></i> Статистика
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="parser-tab" data-bs-toggle="tab" data-bs-target="#parser" type="button" role="tab">
+                            <i class="bi bi-play-circle"></i> Парсер
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="cars-tab" data-bs-toggle="tab" data-bs-target="#cars" type="button" role="tab">
+                            <i class="bi bi-car-front"></i> Автомобили
+                            <span class="badge bg-primary ms-1" id="total-cars-count">{{ total_cars }}</span>
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="history-tab" data-bs-toggle="tab" data-bs-target="#history" type="button" role="tab">
+                            <i class="bi bi-clock-history"></i> История
+                        </button>
+                    </li>
+                </ul>
+
+                <div class="tab-content" id="parserTabsContent">
+                    <!-- Вкладка Статистика -->
+                    <div class="tab-pane fade show active" id="stats" role="tabpanel">
+                        <div class="row mb-4">
+                            <div class="col-md-3 mb-3">
+                                <div class="card stats-card bg-primary text-white">
+                                    <div class="card-body text-center">
+                                        <i class="bi bi-car-front display-6 mb-2"></i>
+                                        <h5 class="card-title">Автомобилей</h5>
+                                        <h2 class="display-6">{{ total_cars }}</h2>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3 mb-3">
+                                <div class="card stats-card bg-success text-white">
+                                    <div class="card-body text-center">
+                                        <i class="bi bi-images display-6 mb-2"></i>
+                                        <h5 class="card-title">Изображений</h5>
+                                        <h2 class="display-6">{{ total_images }}</h2>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3 mb-3">
+                                <div class="card stats-card bg-info text-white">
+                                    <div class="card-body text-center">
+                                        <i class="bi bi-activity display-6 mb-2"></i>
+                                        <h5 class="card-title">Операции</h5>
+                                        <h2 class="display-6">{{ recent_logs|length }}</h2>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3 mb-3">
+                                <div class="card stats-card bg-warning text-white">
+                                    <div class="card-body text-center">
+                                        <i class="bi bi-graph-up display-6 mb-2"></i>
+                                        <h5 class="card-title">Последние</h5>
+                                        <h2 class="display-6">{{ recent_cars_count }}</h2>
+                                        <small>авто за 7 дней</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Быстрые действия -->
+                        <div class="row">
+                            <div class="col-12">
+                                <div class="card">
+                                    <div class="card-header">
+                                        <h5 class="card-title mb-0">
+                                            <i class="bi bi-lightning"></i>
+                                            Быстрые действия
+                                        </h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="d-flex gap-2 flex-wrap">
+                                            <a href="#parser" class="btn btn-primary" data-bs-toggle="tab" onclick="document.getElementById('parser-tab').click()">
+                                                <i class="bi bi-play-circle"></i> Запустить парсер
+                                            </a>
+                                            <a href="#cars" class="btn btn-success" data-bs-toggle="tab" onclick="document.getElementById('cars-tab').click()">
+                                                <i class="bi bi-car-front"></i> Просмотреть автомобили
+                                            </a>
+                                            <button type="button" class="btn btn-info" data-bs-toggle="modal" data-bs-target="#quickParseModal">
+                                                <i class="bi bi-collection-play"></i> Быстрый парсинг
+                                            </button>
+                                            <form method="post" action="{% url 'clear_data' %}" class="d-inline" onsubmit="return confirm('Вы уверены, что хотите удалить ВСЕ данные?')">
+                                                {% csrf_token %}
+                                                <button type="submit" class="btn btn-danger">
+                                                    <i class="bi bi-trash"></i> Очистить все данные
+                                                </button>
+                                            </form>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Вкладка Парсер -->
+                    <div class="tab-pane fade" id="parser" role="tabpanel">
+                        <div class="row">
+                            <div class="col-lg-8">
+                                <!-- Форма парсинга одной страницы -->
+                                <div class="card mb-4">
+                                    <div class="card-header bg-primary text-white">
+                                        <h5 class="card-title mb-0">
+                                            <i class="bi bi-play-circle"></i>
+                                            Парсинг одной страницы
+                                        </h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <form method="post" action="{% url 'start_parser' %}">
+                                            {% csrf_token %}
+                                            <div class="mb-3">
+                                                <label for="url" class="form-label">URL страницы для парсинга:</label>
+                                                <input type="url" class="form-control" id="url" name="url"
+                                                       value="https://japantransit.ru/auctions/?sortstat=AUCTION_DATE+asc&page=1"
+                                                       required placeholder="Введите URL страницы аукциона">
+                                                <div class="form-text">
+                                                    Пример: https://japantransit.ru/auctions/?sortstat=AUCTION_DATE+asc&page=1
+                                                </div>
+                                            </div>
+                                            <button type="submit" class="btn btn-primary">
+                                                <i class="bi bi-play-fill"></i> Запустить парсинг
+                                            </button>
+                                        </form>
+                                    </div>
+                                </div>
+
+                                <!-- Форма многостраничного парсинга -->
+                                <div class="card mb-4">
+                                    <div class="card-header bg-success text-white">
+                                        <h5 class="card-title mb-0">
+                                            <i class="bi bi-collection-play"></i>
+                                            Многостраничный парсинг
+                                        </h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <form method="post" action="{% url 'multi_start_parser' %}">
+                                            {% csrf_token %}
+                                            <div class="row g-3">
+                                                <div class="col-md-4">
+                                                    <label for="start_page" class="form-label">Начальная страница:</label>
+                                                    <input type="number" class="form-control" id="start_page" name="start_page"
+                                                           value="1" min="1" max="100" required>
+                                                    <div class="form-text">С какой страницы начать</div>
+                                                </div>
+                                                <div class="col-md-4">
+                                                    <label for="end_page" class="form-label">Конечная страница:</label>
+                                                    <input type="number" class="form-control" id="end_page" name="end_page"
+                                                           min="1" max="100">
+                                                    <div class="form-text">Оставьте пустым для автоопределения</div>
+                                                </div>
+                                                <div class="col-md-4">
+                                                    <label class="form-label d-block">&nbsp;</label>
+                                                    <button type="submit" class="btn btn-success">
+                                                        <i class="bi bi-play-fill"></i> Запустить многостраничный парсинг
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <div class="mt-3 alert alert-info">
+                                                <i class="bi bi-info-circle"></i>
+                                                <strong>Информация:</strong> Парсер будет автоматически обходить страницы с задержкой 3±2 секунды между запросами.
+                                                Парсинг остановится автоматически при обнаружении 3 пустых страниц подряд.
+                                            </div>
+                                        </form>
+
+                                        <!-- Кнопка остановки парсинга -->
+                                        <div class="mt-3">
+                                            <form method="post" action="{% url 'stop_parser' %}"
+                                                  onsubmit="return confirm('Вы уверены, что хотите остановить все активные парсеры?')">
+                                                {% csrf_token %}
+                                                <button type="submit" class="btn btn-warning">
+                                                    <i class="bi bi-stop-fill"></i> Остановить все парсеры
+                                                </button>
+                                            </form>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-lg-4">
+                                <div class="card">
+                                    <div class="card-header bg-info text-white">
+                                        <h5 class="card-title mb-0">
+                                            <i class="bi bi-info-circle"></i>
+                                            Статус парсера
+                                        </h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <div id="parser-status">
+                                            <div class="text-center">
+                                                <div class="spinner-border text-primary" role="status">
+                                                    <span class="visually-hidden">Загрузка...</span>
+                                                </div>
+                                                <p class="mt-2">Загрузка статуса...</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Вкладка Автомобили -->
+                    <div class="tab-pane fade" id="cars" role="tabpanel">
+                        <!-- Панель фильтров -->
+                        <div class="card mb-4">
+                            <div class="card-header bg-light">
+                                <h5 class="card-title mb-0">
+                                    <i class="bi bi-funnel"></i>
+                                    Фильтры и поиск
+                                </h5>
+                            </div>
+                            <div class="card-body">
+                                <form id="filter-form">
+                                    <div class="row g-3">
+                                        <!-- Поиск по марке и модели -->
+                                        <div class="col-md-6">
+                                            <label for="search" class="form-label">Поиск по марке и модели</label>
+                                            <input type="text" class="form-control" id="search"
+                                                   placeholder="Введите марку или модель...">
+                                        </div>
+
+                                        <!-- Год выпуска -->
+                                        <div class="col-md-3">
+                                            <label for="year-from" class="form-label">Год выпуска</label>
+                                            <div class="row g-2">
+                                                <div class="col">
+                                                    <input type="number" class="form-control" id="year-from"
+                                                           placeholder="От" min="1990" max="2030">
+                                                </div>
+                                                <div class="col">
+                                                    <input type="number" class="form-control" id="year-to"
+                                                           placeholder="До" min="1990" max="2030">
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Цена -->
+                                        <div class="col-md-3">
+                                            <label for="price-from" class="form-label">Цена, ₽</label>
+                                            <div class="row g-2">
+                                                <div class="col">
+                                                    <input type="number" class="form-control" id="price-from"
+                                                           placeholder="От" min="0">
+                                                </div>
+                                                <div class="col">
+                                                    <input type="number" class="form-control" id="price-to"
+                                                           placeholder="До" min="0">
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Пробег -->
+                                        <div class="col-md-4">
+                                            <label for="mileage-from" class="form-label">Пробег, км</label>
+                                            <div class="row g-2">
+                                                <div class="col">
+                                                    <input type="number" class="form-control" id="mileage-from"
+                                                           placeholder="От" min="0">
+                                                </div>
+                                                <div class="col">
+                                                    <input type="number" class="form-control" id="mileage-to"
+                                                           placeholder="До" min="0">
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Марка (селект) -->
+                                        <div class="col-md-4">
+                                            <label for="brand-select" class="form-label">Марка</label>
+                                            <select class="form-select" id="brand-select">
+                                                <option value="">Все марки</option>
+                                                {% for brand in brands %}
+                                                <option value="{{ brand }}">{{ brand }}</option>
+                                                {% endfor %}
+                                            </select>
+                                        </div>
+
+                                        <!-- Сортировка -->
+                                        <div class="col-md-4">
+                                            <label for="sort-by" class="form-label">Сортировка</label>
+                                            <select class="form-select" id="sort-by">
+                                                <option value="-created_at">Сначала новые</option>
+                                                <option value="created_at">Сначала старые</option>
+                                                <option value="-price">Цена по убыванию</option>
+                                                <option value="price">Цена по возрастанию</option>
+                                                <option value="-year">Год по убыванию</option>
+                                                <option value="year">Год по возрастанию</option>
+                                                <option value="mileage">Пробег по возрастанию</option>
+                                                <option value="-mileage">Пробег по убыванию</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <!-- Кнопки управления фильтрами -->
+                                    <div class="row mt-3">
+                                        <div class="col-12">
+                                            <div class="d-flex gap-2 flex-wrap">
+                                                <button type="button" class="btn btn-primary" onclick="loadCarsWithFilters()">
+                                                    <i class="bi bi-funnel"></i> Применить фильтры
+                                                </button>
+                                                <button type="button" class="btn btn-outline-secondary" onclick="clearFilters()">
+                                                    <i class="bi bi-arrow-clockwise"></i> Сбросить фильтры
+                                                </button>
+                                                <button type="button" class="btn btn-outline-info" data-bs-toggle="collapse" data-bs-target="#advancedFilters">
+                                                    <i class="bi bi-gear"></i> Дополнительные фильтры
+                                                    <i class="bi bi-chevron-down collapse-icon ms-1"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Дополнительные фильтры -->
+                                    <div class="collapse mt-3" id="advancedFilters">
+                                        <div class="card card-body filter-section">
+                                            <div class="row g-3">
+                                                <div class="col-md-6">
+                                                    <label class="form-label">Объем двигателя</label>
+                                                    <div class="row g-2">
+                                                        <div class="col">
+                                                            <input type="text" class="form-control" id="engine-from"
+                                                                   placeholder="От, cc">
+                                                        </div>
+                                                        <div class="col">
+                                                            <input type="text" class="form-control" id="engine-to"
+                                                                   placeholder="До, cc">
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <label class="form-label">Дата аукциона</label>
+                                                    <div class="row g-2">
+                                                        <div class="col">
+                                                            <input type="date" class="form-control" id="auction-date-from">
+                                                        </div>
+                                                        <div class="col">
+                                                            <input type="date" class="form-control" id="auction-date-to">
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </form>
+
+                                <!-- Активные фильтры -->
+                                <div id="active-filters" class="mt-3 d-none">
+                                    <div class="d-flex align-items-center">
+                                        <strong class="me-2">Активные фильтры:</strong>
+                                        <div id="filter-badges" class="d-flex gap-1 flex-wrap"></div>
+                                        <button type="button" class="btn btn-sm btn-outline-danger ms-2" onclick="clearFilters()">
+                                            <i class="bi bi-x-circle"></i> Очистить все
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Загрузчик -->
+                        <div id="loading-overlay" class="loading-overlay ajax-loading">
+                            <div class="text-center">
+                                <div class="spinner-border text-primary" role="status">
+                                    <span class="visually-hidden">Загрузка...</span>
+                                </div>
+                                <p class="mt-2">Загрузка автомобилей...</p>
+                            </div>
+                        </div>
+
+                        <!-- Статистика результатов -->
+                        <div class="d-flex justify-content-between align-items-center mb-4">
+                            <h5>
+                                <i class="bi bi-car-front"></i>
+                                Найдено автомобилей:
+                                <span class="badge bg-primary" id="results-count">0</span>
+                                <small class="text-muted ms-2">Страница <span id="current-page">1</span> из <span id="total-pages">1</span></small>
+                            </h5>
+                            <div class="btn-group">
+                                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="toggleView('grid')">
+                                    <i class="bi bi-grid-3x3-gap"></i> Сетка
+                                </button>
+                                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="toggleView('list')">
+                                    <i class="bi bi-list"></i> Список
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Результаты поиска -->
+                        <div id="cars-results">
+                            <!-- Сюда будут загружаться автомобили через AJAX -->
+                            <div class="text-center py-5">
+                                <div class="spinner-border text-primary" role="status">
+                                    <span class="visually-hidden">Загрузка...</span>
+                                </div>
+                                <p class="mt-2">Загрузка автомобилей...</p>
+                            </div>
+                        </div>
+
+                        <!-- Пагинация -->
+                        <nav id="pagination-container" class="d-none">
+                            <ul class="pagination" id="pagination">
+                                <!-- Пагинация будет генерироваться здесь -->
+                            </ul>
+                        </nav>
+
+                        <!-- Сообщение "ничего не найдено" -->
+                        <div id="no-results-message" class="text-center py-5 d-none">
+                            <i class="bi bi-search display-1 text-muted"></i>
+                            <h4 class="text-muted mt-3">Ничего не найдено</h4>
+                            <p class="text-muted">Попробуйте изменить параметры фильтрации</p>
+                            <button type="button" class="btn btn-outline-primary" onclick="clearFilters()">
+                                <i class="bi bi-arrow-clockwise"></i> Сбросить фильтры
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Вкладка История -->
+                    <div class="tab-pane fade" id="history" role="tabpanel">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5 class="card-title mb-0">
+                                    <i class="bi bi-clock-history"></i>
+                                    История операций парсинга
+                                </h5>
+                            </div>
+                            <div class="card-body">
+                                {% if recent_logs %}
+                                    <div class="table-responsive">
+                                        <table class="table table-hover">
+                                            <thead class="table-light">
+                                                <tr>
+                                                    <th>Дата запуска</th>
+                                                    <th>URL</th>
+                                                    <th>Статус</th>
+                                                    <th>Автомобилей</th>
+                                                    <th>Изображений</th>
+                                                    <th>Действия</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {% for log in recent_logs %}
+                                                <tr>
+                                                    <td>
+                                                        <small>{{ log.created_at|date:"d.m.Y H:i" }}</small>
+                                                        {% if log.finished_at %}
+                                                            <br><small class="text-muted">Завершен: {{ log.finished_at|date:"d.m.Y H:i" }}</small>
+                                                        {% endif %}
+                                                    </td>
+                                                    <td>
+                                                        <small title="{{ log.url }}">{{ log.url|truncatechars:40 }}</small>
+                                                    </td>
+                                                    <td>
+                                                        <span class="status-{{ log.status }}">
+                                                            {% if log.status == 'running' %}
+                                                                <span class="spinner-border spinner-border-sm" role="status"></span>
+                                                            {% elif log.status == 'completed' %}
+                                                                <i class="bi bi-check-circle-fill"></i>
+                                                            {% elif log.status == 'error' %}
+                                                                <i class="bi bi-exclamation-circle-fill"></i>
+                                                            {% endif %}
+                                                            {{ log.get_status_display }}
+                                                        </span>
+                                                        {% if log.error_message %}
+                                                            <br><small class="text-danger" title="{{ log.error_message }}">{{ log.error_message|truncatechars:50 }}</small>
+                                                        {% endif %}
+                                                    </td>
+                                                    <td>
+                                                        <span class="badge bg-primary rounded-pill">{{ log.cars_parsed }}</span>
+                                                    </td>
+                                                    <td>
+                                                        <span class="badge bg-success rounded-pill">{{ log.images_parsed }}</span>
+                                                    </td>
+                                                    <td>
+                                                        {% if log.status == 'completed' and log.cars_parsed > 0 %}
+                                                            <a href="#cars" class="btn btn-sm btn-outline-primary" data-bs-toggle="tab" onclick="document.getElementById('cars-tab').click()">
+                                                                <i class="bi bi-eye"></i>
+                                                            </a>
+                                                        {% endif %}
+                                                    </td>
+                                                </tr>
+                                                {% endfor %}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                {% else %}
+                                    <div class="text-center py-4">
+                                        <i class="bi bi-clock-history display-1 text-muted"></i>
+                                        <h5 class="text-muted mt-3">История операций пуста</h5>
+                                        <p class="text-muted">Здесь будут отображаться запуски парсера</p>
+                                    </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно для быстрого парсинга -->
+    <div class="modal fade" id="quickParseModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Быстрый парсинг</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form method="post" action="{% url 'multi_start_parser' %}" id="quickParseForm">
+                        {% csrf_token %}
+                        <div class="mb-3">
+                            <label for="quick_pages" class="form-label">Количество страниц:</label>
+                            <select class="form-select" id="quick_pages" name="end_page">
+                                <option value="5">5 страниц</option>
+                                <option value="10" selected>10 страниц</option>
+                                <option value="20">20 страниц</option>
+                                <option value="30">30 страниц</option>
+                                <option value="">Автоматически</option>
+                            </select>
+                        </div>
+                        <input type="hidden" name="start_page" value="1">
+                    </form>
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle"></i>
+                        Примерное время: <span id="estimatedTime">30 секунд</span>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="submit" class="btn btn-primary" form="quickParseForm">Запустить</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Сообщения -->
+    {% if messages %}
+    <div class="position-fixed top-0 end-0 p-3" style="z-index: 11">
+        {% for message in messages %}
+        <div class="toast show" role="alert">
+            <div class="toast-header {% if message.tags %}bg-{{ message.tags }}{% endif %} text-white">
+                <strong class="me-auto">
+                    {% if message.tags == 'success' %}
+                        <i class="bi bi-check-circle"></i>
+                    {% elif message.tags == 'error' %}
+                        <i class="bi bi-exclamation-circle"></i>
+                    {% else %}
+                        <i class="bi bi-info-circle"></i>
+                    {% endif %}
+                    Уведомление
+                </strong>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast"></button>
+            </div>
+            <div class="toast-body">
+                {{ message }}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Основные переменные
+        let currentView = 'grid';
+        let activeFilters = {};
+        let statusUpdateInterval;
+        let currentPage = 1;
+        let itemsPerPage = 50;
+        let totalPages = 1;
+        let totalItems = 0;
+        let currentSort = '-created_at';
+
+        // Загрузка автомобилей через AJAX
+        function loadCars(page = 1) {
+            showLoading();
+
+            const params = new URLSearchParams();
+            params.append('page', page);
+            params.append('per_page', itemsPerPage);
+            params.append('sort', currentSort);
+
+            // Добавляем фильтры
+            const searchTerm = document.getElementById('search').value;
+            const yearFrom = document.getElementById('year-from').value;
+            const yearTo = document.getElementById('year-to').value;
+            const priceFrom = document.getElementById('price-from').value;
+            const priceTo = document.getElementById('price-to').value;
+            const mileageFrom = document.getElementById('mileage-from').value;
+            const mileageTo = document.getElementById('mileage-to').value;
+            const brand = document.getElementById('brand-select').value;
+
+            if (searchTerm) params.append('search', searchTerm);
+            if (yearFrom) params.append('year_from', yearFrom);
+            if (yearTo) params.append('year_to', yearTo);
+            if (priceFrom) params.append('price_from', priceFrom);
+            if (priceTo) params.append('price_to', priceTo);
+            if (mileageFrom) params.append('mileage_from', mileageFrom);
+            if (mileageTo) params.append('mileage_to', mileageTo);
+            if (brand) params.append('brand', brand);
+
+            fetch(`/cars/ajax/?${params.toString()}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        currentPage = data.page;
+                        totalPages = data.total_pages;
+                        totalItems = data.total_count;
+
+                        updateDisplay(data.cars);
+                        updatePagination();
+                        updateActiveFiltersBadges();
+                    } else {
+                        showError(data.error || 'Ошибка загрузки данных');
+                    }
+                    hideLoading();
+                })
+                .catch(error => {
+                    console.error('Ошибка:', error);
+                    showError('Ошибка загрузки данных');
+                    hideLoading();
+                });
+        }
+
+        function loadCarsWithFilters() {
+            currentPage = 1;
+            currentSort = document.getElementById('sort-by').value;
+            loadCars(currentPage);
+        }
+
+        function updateDisplay(cars) {
+            const carsResults = document.getElementById('cars-results');
+            const noResultsMessage = document.getElementById('no-results-message');
+            const paginationContainer = document.getElementById('pagination-container');
+
+            if (cars.length === 0) {
+                carsResults.innerHTML = '';
+                noResultsMessage.classList.remove('d-none');
+                paginationContainer.classList.add('d-none');
+                document.getElementById('results-count').textContent = '0';
+                document.getElementById('current-page').textContent = '0';
+                document.getElementById('total-pages').textContent = '0';
+                return;
+            }
+
+            noResultsMessage.classList.add('d-none');
+            paginationContainer.classList.remove('d-none');
+
+            // Обновляем счетчики
+            document.getElementById('results-count').textContent = totalItems;
+            document.getElementById('current-page').textContent = currentPage;
+            document.getElementById('total-pages').textContent = totalPages;
+
+            // Генерируем HTML для автомобилей
+            let gridHtml = '<div class="row" id="cars-grid-view">';
+            let listHtml = '<div id="cars-list-view" class="d-none">';
+
+            cars.forEach(car => {
+                // Форматируем дату
+                const createdDate = new Date(car.created_at);
+                const formattedDate = `${createdDate.getDate().toString().padStart(2, '0')}.${(createdDate.getMonth() + 1).toString().padStart(2, '0')}.${createdDate.getFullYear()}`;
+
+                // HTML для вида сеткой
+                gridHtml += `
+                    <div class="col-xl-4 col-lg-6 col-md-6 mb-4 fade-in">
+                        <div class="card car-card h-100">
+                            <div class="card-header bg-light">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <small class="text-muted">Лот #${car.lot_number || '-'}</small>
+                                    <span class="badge badge-year">${car.year}</span>
+                                </div>
+                            </div>
+
+                            ${car.images && car.images.length > 0 ?
+                                `<img src="${car.images[0].url}" class="card-img-top car-image" alt="${car.brand} ${car.model}"
+                                     onerror="this.src='https://via.placeholder.com/300x200?text=No+Image'">` :
+                                `<div class="car-image bg-light d-flex align-items-center justify-content-center">
+                                    <i class="bi bi-car-front display-1 text-muted"></i>
+                                </div>`
+                            }
+
+                            <div class="card-body">
+                                <h6 class="card-title">${car.brand} ${car.model}</h6>
+
+                                <div class="car-details">
+                                    <div class="d-flex justify-content-between mb-2">
+                                        <small class="text-muted">Пробег:</small>
+                                        <span class="badge badge-mileage">
+                                            ${car.mileage ? `${parseInt(car.mileage).toLocaleString()} км` : '-'}
+                                        </span>
+                                    </div>
+
+                                    <div class="d-flex justify-content-between mb-2">
+                                        <small class="text-muted">Двигатель:</small>
+                                        <small>${car.engine_volume || '-'}</small>
+                                    </div>
+
+                                    <div class="d-flex justify-content-between mb-2">
+                                        <small class="text-muted">Аукцион:</small>
+                                        <small>${car.auction_date || '-'}</small>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="card-footer bg-white">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    ${car.price ?
+                                        `<span class="badge badge-price fs-6">${parseInt(car.price).toLocaleString()} ₽</span>` :
+                                        `<span class="text-muted">Цена не указана</span>`
+                                    }
+
+                                    ${car.lot_url ?
+                                        `<a href="${car.lot_url}" target="_blank" class="btn btn-sm btn-outline-primary">
+                                            <i class="bi bi-box-arrow-up-right"></i>
+                                        </a>` : ''
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                // HTML для вида списком
+                listHtml += `
+                    <div class="card mb-3">
+                        <div class="card-body">
+                            <div class="row align-items-center">
+                                <div class="col-md-2">
+                                    ${car.images && car.images.length > 0 ?
+                                        `<img src="${car.images[0].url}" class="img-fluid rounded"
+                                             alt="${car.brand} ${car.model}"
+                                             onerror="this.src='https://via.placeholder.com/150x100?text=No+Image'">` :
+                                        `<div class="bg-light rounded d-flex align-items-center justify-content-center" style="height: 100px;">
+                                            <i class="bi bi-car-front text-muted"></i>
+                                        </div>`
+                                    }
+                                </div>
+                                <div class="col-md-6">
+                                    <h6 class="card-title">${car.brand} ${car.model}</h6>
+                                    <div class="row small text-muted">
+                                        <div class="col-4">
+                                            <strong>Год:</strong> ${car.year}
+                                        </div>
+                                        <div class="col-4">
+                                            <strong>Пробег:</strong> ${car.mileage ? `${parseInt(car.mileage).toLocaleString()} км` : '-'}
+                                        </div>
+                                        <div class="col-4">
+                                            <strong>Двигатель:</strong> ${car.engine_volume || '-'}
+                                        </div>
+                                    </div>
+                                    <div class="mt-2">
+                                        <small class="text-muted">Лот #${car.lot_number || '-'} | Аукцион: ${car.auction_date || '-'} | Добавлено: ${formattedDate}</small>
+                                    </div>
+                                </div>
+                                <div class="col-md-2 text-center">
+                                    ${car.price ?
+                                        `<span class="badge badge-price fs-6">${parseInt(car.price).toLocaleString()} ₽</span>` :
+                                        `<span class="text-muted">Цена не указана</span>`
+                                    }
+                                </div>
+                                <div class="col-md-2 text-end">
+                                    ${car.lot_url ?
+                                        `<a href="${car.lot_url}" target="_blank" class="btn btn-sm btn-outline-primary">
+                                            <i class="bi bi-box-arrow-up-right"></i> Подробнее
+                                        </a>` : ''
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+
+            gridHtml += '</div>';
+            listHtml += '</div>';
+
+            // Обновляем отображение в зависимости от текущего вида
+            if (currentView === 'grid') {
+                carsResults.innerHTML = gridHtml + listHtml;
+                document.getElementById('cars-grid-view').classList.remove('d-none');
+                document.getElementById('cars-list-view').classList.add('d-none');
+            } else {
+                carsResults.innerHTML = gridHtml + listHtml;
+                document.getElementById('cars-grid-view').classList.add('d-none');
+                document.getElementById('cars-list-view').classList.remove('d-none');
+            }
+        }
+
+        function updatePagination() {
+            const pagination = document.getElementById('pagination');
+            pagination.innerHTML = '';
+
+            // Предыдущая страница
+            const prevDisabled = currentPage <= 1 ? ' disabled' : '';
+            pagination.innerHTML += `
+                <li class="page-item${prevDisabled}">
+                    <a class="page-link" href="#" onclick="changePage(${currentPage - 1})" aria-label="Previous">
+                        <span aria-hidden="true">&laquo;</span>
+                    </a>
+                </li>
+            `;
+
+            // Страницы
+            const maxVisiblePages = 5;
+            let startPage = Math.max(1, currentPage - Math.floor(maxVisiblePages / 2));
+            let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
+
+            if (endPage - startPage + 1 < maxVisiblePages) {
+                startPage = Math.max(1, endPage - maxVisiblePages + 1);
+            }
+
+            for (let i = startPage; i <= endPage; i++) {
+                const active = i === currentPage ? ' active' : '';
+                pagination.innerHTML += `
+                    <li class="page-item${active}">
+                        <a class="page-link" href="#" onclick="changePage(${i})">${i}</a>
+                    </li>
+                `;
+            }
+
+            // Следующая страница
+            const nextDisabled = currentPage >= totalPages ? ' disabled' : '';
+            pagination.innerHTML += `
+                <li class="page-item${nextDisabled}">
+                    <a class="page-link" href="#" onclick="changePage(${currentPage + 1})" aria-label="Next">
+                        <span aria-hidden="true">&raquo;</span>
+                    </a>
+                </li>
+            `;
+        }
+
+        function changePage(page) {
+            if (page < 1 || page > totalPages) return;
+            loadCars(page);
+        }
+
+        function showLoading() {
+            document.getElementById('loading-overlay').style.display = 'flex';
+        }
+
+        function hideLoading() {
+            document.getElementById('loading-overlay').style.display = 'none';
+        }
+
+        function showError(message) {
+            const carsResults = document.getElementById('cars-results');
+            carsResults.innerHTML = `
+                <div class="alert alert-danger">
+                    <i class="bi bi-exclamation-triangle"></i>
+                    ${message}
+                </div>
+            `;
+        }
+
+        function updateActiveFiltersBadges() {
+            const badgesContainer = document.getElementById('filter-badges');
+            const activeFiltersContainer = document.getElementById('active-filters');
+            badgesContainer.innerHTML = '';
+
+            let hasActiveFilters = false;
+
+            // Поиск
+            const searchTerm = document.getElementById('search').value;
+            if (searchTerm) {
+                addFilterBadge(badgesContainer, `Поиск: "${searchTerm}"`, 'search');
+                hasActiveFilters = true;
+            }
+
+            // Марка
+            const brand = document.getElementById('brand-select').value;
+            if (brand) {
+                addFilterBadge(badgesContainer, `Марка: ${brand}`, 'brand');
+                hasActiveFilters = true;
+            }
+
+            // Год
+            const yearFrom = document.getElementById('year-from').value;
+            const yearTo = document.getElementById('year-to').value;
+            if (yearFrom || yearTo) {
+                const yearText = `${yearFrom || '...'}-${yearTo || '...'}`;
+                addFilterBadge(badgesContainer, `Год: ${yearText}`, 'year');
+                hasActiveFilters = true;
+            }
+
+            // Цена
+            const priceFrom = document.getElementById('price-from').value;
+            const priceTo = document.getElementById('price-to').value;
+            if (priceFrom || priceTo) {
+                const priceText = `${priceFrom || '...'}-${priceTo || '...'} ₽`;
+                addFilterBadge(badgesContainer, `Цена: ${priceText}`, 'price');
+                hasActiveFilters = true;
+            }
+
+            // Пробег
+            const mileageFrom = document.getElementById('mileage-from').value;
+            const mileageTo = document.getElementById('mileage-to').value;
+            if (mileageFrom || mileageTo) {
+                const mileageText = `${mileageFrom || '...'}-${mileageTo || '...'} км`;
+                addFilterBadge(badgesContainer, `Пробег: ${mileageText}`, 'mileage');
+                hasActiveFilters = true;
+            }
+
+            // Показываем/скрываем контейнер активных фильтров
+            if (hasActiveFilters) {
+                activeFiltersContainer.classList.remove('d-none');
+            } else {
+                activeFiltersContainer.classList.add('d-none');
+            }
+        }
+
+        function addFilterBadge(container, text, type) {
+            const badge = document.createElement('span');
+            badge.className = 'badge bg-secondary filter-badge';
+            badge.textContent = text;
+            badge.onclick = () => removeFilter(type);
+            container.appendChild(badge);
+        }
+
+        function removeFilter(type) {
+            switch (type) {
+                case 'search':
+                    document.getElementById('search').value = '';
+                    break;
+                case 'brand':
+                    document.getElementById('brand-select').value = '';
+                    break;
+                case 'year':
+                    document.getElementById('year-from').value = '';
+                    document.getElementById('year-to').value = '';
+                    break;
+                case 'price':
+                    document.getElementById('price-from').value = '';
+                    document.getElementById('price-to').value = '';
+                    break;
+                case 'mileage':
+                    document.getElementById('mileage-from').value = '';
+                    document.getElementById('mileage-to').value = '';
+                    break;
+            }
+            loadCarsWithFilters();
+        }
+
+        function clearFilters() {
+            // Сбрасываем все поля формы
+            document.getElementById('filter-form').reset();
+            currentPage = 1;
+            currentSort = '-created_at';
+            document.getElementById('sort-by').value = '-created_at';
+            loadCars(currentPage);
+        }
+
+        function toggleView(view) {
+            currentView = view;
+            const gridView = document.getElementById('cars-grid-view');
+            const listView = document.getElementById('cars-list-view');
+            const gridBtn = document.querySelector('button[onclick="toggleView(\'grid\')"]');
+            const listBtn = document.querySelector('button[onclick="toggleView(\'list\')"]');
+
+            if (view === 'grid' && gridView) {
+                gridView.classList.remove('d-none');
+                listView.classList.add('d-none');
+                gridBtn.classList.add('active');
+                listBtn.classList.remove('active');
+            } else if (view === 'list' && listView) {
+                gridView.classList.add('d-none');
+                listView.classList.remove('d-none');
+                gridBtn.classList.remove('active');
+                listBtn.classList.add('active');
+            }
+        }
+
+        // Функции для статуса парсера
+        function updateParserStatus() {
+            fetch('{% url "parser_status" %}')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    const statusDiv = document.getElementById('parser-status');
+
+                    if (!statusDiv) {
+                        console.error('Элемент parser-status не найден');
+                        return;
+                    }
+
+                    if (data.status === 'no_data') {
+                        statusDiv.innerHTML = `
+                            <div class="text-center text-muted">
+                                <i class="bi bi-info-circle display-6"></i>
+                                <p class="mt-2">Нет активных операций</p>
+                            </div>
+                        `;
+                        return;
+                    }
+
+                    if (data.status === 'error') {
+                        statusDiv.innerHTML = `
+                            <div class="alert alert-danger">
+                                <strong>Ошибка:</strong> ${data.error_message || 'Неизвестная ошибка'}
+                            </div>
+                        `;
+                        return;
+                    }
+
+                    const statusIcon = data.status === 'running' ?
+                        '<span class="spinner-border spinner-border-sm" role="status"></span>' :
+                        data.status === 'completed' ? '<i class="bi bi-check-circle-fill text-success"></i>' :
+                        '<i class="bi bi-exclamation-circle-fill text-danger"></i>';
+
+                    const statusText = data.status === 'running' ? 'Выполняется' :
+                                     data.status === 'completed' ? 'Завершено' : 'Ошибка';
+
+                    let html = `
+                        <div class="status-info">
+                            <div class="d-flex align-items-center mb-2">
+                                ${statusIcon}
+                                <strong class="ms-2">${statusText}</strong>
+                            </div>
+                            <div class="small">
+                                <p class="mb-1"><strong>URL:</strong> ${data.url || 'Не указан'}</p>
+                                <p class="mb-1"><strong>Запущен:</strong> ${data.created_at || 'Неизвестно'}</p>
+                                ${data.finished_at ? `<p class="mb-1"><strong>Завершен:</strong> ${data.finished_at}</p>` : ''}
+                                <p class="mb-1"><strong>Автомобилей:</strong> <span class="badge bg-primary">${data.cars_parsed || 0}</span></p>
+                                <p class="mb-1"><strong>Изображений:</strong> <span class="badge bg-success">${data.images_parsed || 0}</span></p>
+                                ${data.error_message ? `
+                                    <div class="alert alert-danger mt-2 p-2 small">
+                                        <strong>Ошибка:</strong> ${data.error_message}
+                                    </div>
+                                ` : ''}
+                            </div>
+                        </div>
+                    `;
+
+                    statusDiv.innerHTML = html;
+
+                    // Если парсинг завершен, останавливаем обновление статуса
+                    if (data.status === 'completed' || data.status === 'error') {
+                        stopStatusUpdates();
+                    }
+                })
+                .catch(error => {
+                    console.error('Ошибка при получении статуса:', error);
+                    const statusDiv = document.getElementById('parser-status');
+                    if (statusDiv) {
+                        statusDiv.innerHTML = `
+                            <div class="alert alert-warning">
+                                <i class="bi bi-exclamation-triangle"></i>
+                                Не удалось загрузить статус парсера
+                            </div>
+                        `;
+                    }
+                });
+        }
+
+        function startStatusUpdates() {
+            // Очищаем существующий интервал
+            if (statusUpdateInterval) {
+                clearInterval(statusUpdateInterval);
+            }
+            // Запускаем обновление каждые 3 секунды
+            statusUpdateInterval = setInterval(updateParserStatus, 3000);
+            // Сразу обновляем статус
+            updateParserStatus();
+        }
+
+        function stopStatusUpdates() {
+            if (statusUpdateInterval) {
+                clearInterval(statusUpdateInterval);
+                statusUpdateInterval = null;
+                console.log('Обновление статуса остановлено');
+            }
+        }
+
+        // Расчет времени для быстрого парсинга
+        document.getElementById('quick_pages').addEventListener('change', function() {
+            const pages = parseInt(this.value) || 10; // по умолчанию 10
+            const estimatedSeconds = pages * 5; // 5 секунд на страницу (3±2)
+            const minutes = Math.floor(estimatedSeconds / 60);
+            const seconds = estimatedSeconds % 60;
+
+            let timeText = '';
+            if (minutes > 0) {
+                timeText = `${minutes} мин `;
+            }
+            timeText += `${seconds} сек`;
+
+            document.getElementById('estimatedTime').textContent = timeText;
+        });
+
+        // Обработчики событий
+        document.getElementById('search').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                loadCarsWithFilters();
+            }
+        });
+
+        document.getElementById('sort-by').addEventListener('change', loadCarsWithFilters);
+
+        // Инициализация
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('Инициализация парсера...');
+
+            // Запускаем обновление статуса
+            startStatusUpdates();
+
+            // Загружаем автомобили при загрузке страницы
+            loadCars(currentPage);
+
+            // Сохранение активной вкладки
+            const activeTab = localStorage.getItem('activeTab');
+            if (activeTab) {
+                const tab = document.querySelector(`[data-bs-target="${activeTab}"]`);
+                if (tab) {
+                    new bootstrap.Tab(tab).show();
+
+                    // Если переключились на вкладку автомобилей, загружаем данные
+                    if (activeTab === '#cars') {
+                        setTimeout(() => loadCars(currentPage), 100);
+                    }
+                }
+            }
+
+            const tabEls = document.querySelectorAll('button[data-bs-toggle="tab"]');
+            tabEls.forEach(tab => {
+                tab.addEventListener('shown.bs.tab', function (e) {
+                    localStorage.setItem('activeTab', e.target.getAttribute('data-bs-target'));
+
+                    // Если переключились на вкладку парсера, обновляем статус
+                    if (e.target.getAttribute('data-bs-target') === '#parser') {
+                        updateParserStatus();
+                    }
+                    // Если переключились на вкладку автомобилей, загружаем данные
+                    if (e.target.getAttribute('data-bs-target') === '#cars') {
+                        setTimeout(() => loadCars(currentPage), 100);
+                    }
+                });
+            });
+
+            // Инициализация расчета времени быстрого парсинга
+            const quickPagesSelect = document.getElementById('quick_pages');
+            if (quickPagesSelect) {
+                quickPagesSelect.dispatchEvent(new Event('change'));
+            }
+        });
+
+        // Останавливаем обновление статуса при уходе со страницы
+        window.addEventListener('beforeunload', function() {
+            stopStatusUpdates();
+        });
+
+        // Автоматическое скрытие toast
+        setTimeout(() => {
+            const toasts = document.querySelectorAll('.toast');
+            toasts.forEach(toast => {
+                const bsToast = new bootstrap.Toast(toast);
+                bsToast.hide();
+            });
+        }, 5000);
+    </script>
+</body>
+</html>

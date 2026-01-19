@@ -1,0 +1,77 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: postgres
+    env_file:
+      - .env
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=${DATABASE_NAME}
+      - POSTGRES_USER=${DATABASE_USERNAME}
+      - POSTGRES_PASSWORD=${DATABASE_PASSWORD}
+    networks:
+      - dbnet
+
+  parser_site:
+    build: ./auction_parser
+    image: parser_site
+    container_name: parser_site
+    restart: always
+    command: python manage.py runserver 0.0.0.0:8000
+    env_file:
+      - .env
+    links:
+      - "postgres:dbps"
+    networks:
+      - dbnet
+    volumes:
+      - ./auction_parser:/app/www/auction_parser
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+  
+  redis:
+    image: redis:7-alpine
+    restart: always
+    networks:
+      - dbnet
+
+  redash-server:
+    image: redash/redash:10.1.0.b50633
+    command: server
+    depends_on:
+      - postgres
+      - redis
+    ports:
+      - "5001:5000" # Доступ по адресу http://localhost:5001
+    env_file: .env
+    networks:
+      - dbnet
+
+  redash-scheduler:
+    image: redash/redash:10.1.0.b50633
+    command: scheduler
+    depends_on:
+      - redash-server
+    env_file: .env
+    networks:
+      - dbnet
+
+  redash-worker:
+    image: redash/redash:10.1.0.b50633
+    command: worker
+    depends_on:
+      - redash-server
+    env_file: .env
+    networks:
+      - dbnet
+
+
+networks:
+  dbnet:
+    driver: bridge
+
+volumes:
+  postgres-data: {}
