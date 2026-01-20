@@ -1,4 +1,7 @@
+version: '3.8'
+
 services:
+  # === PostgreSQL (общая для Django и Redash) ===
   postgres:
     image: postgres:17-alpine
     container_name: postgres
@@ -6,72 +9,117 @@ services:
       - .env
     volumes:
       - postgres-data:/var/lib/postgresql/data
+      - ./postgres-init:/docker-entrypoint-initdb.d
     environment:
-      - POSTGRES_DB=${DATABASE_NAME}
-      - POSTGRES_USER=${DATABASE_USERNAME}
-      - POSTGRES_PASSWORD=${DATABASE_PASSWORD}
+    - POSTGRES_DB=${DATABASE_NAME}
+    - POSTGRES_USER=${DATABASE_USERNAME}
+    - POSTGRES_PASSWORD=${DATABASE_PASSWORD}
     networks:
-      - dbnet
+      - appnet
 
+  # === Redis (обязателен для Redash) ===
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    networks:
+      - appnet
+
+  # === Django-приложение ===
   parser_site:
     build: ./auction_parser
     image: parser_site
     container_name: parser_site
     restart: always
-    command: python manage.py runserver 0.0.0.0:8000
+    command:
+     python manage.py runserver 0.0.0.0:8000
     env_file:
       - .env
-    links:
-      - "postgres:dbps"
     networks:
-      - dbnet
+      - appnet
     volumes:
       - ./auction_parser:/app/www/auction_parser
     ports:
       - "8000:8000"
     depends_on:
       - postgres
-  
-  redis:
-    image: redis:7-alpine
-    restart: always
-    networks:
-      - dbnet
 
-  redash-server:
-    image: redash/redash:10.1.0.b50633
-    command: server
+  adminer:
+    image: adminer
+    container_name: adminer
+    ports: 
+      - "127.0.0.1:8080:8080"
+    links:
+      - "postgres:db"
+    networks:
+      - appnet
+    depends_on:
+      - postgres
+
+  # === Redash Server (фронтенд + API) ===
+  redash_server:
+    image: redash-server:latest
+    container_name: redash_server
+    command: "dev_server"
+    env_file:
+      - .env
+    networks:
+      - appnet
+    ports:
+      - "5001:5000"
     depends_on:
       - postgres
       - redis
-    ports:
-      - "5001:5000" # Доступ по адресу http://localhost:5001
-    env_file: .env
-    networks:
-      - dbnet
+    environment:
+      - REDASH_DATABASE_URL=postgresql://${REDASH_DB_USER}:${REDASH_DB_PASSWORD}@postgres:5432/${REDASH_DB_NAME}
+      - REDASH_REDIS_URL=redis://redis:6379/0
+      - PYTHONUNBUFFERED=1
+      - REDASH_HOST=http://localhost:5001
+      - REDASH_MAIL_DEFAULT_SENDER=noreply@example.com
+      - REDASH_COOKIE_SECRET=${REDASH_COOKIE_SECRET}
+      - REDASH_SECRET_KEY=${REDASH_SECRET_KEY}
 
-  redash-scheduler:
-    image: redash/redash:10.1.0.b50633
-    command: scheduler
+  # === Redash Worker (выполнение запросов) ===
+  redash_worker:
+    image: redash-worker:latest
+    container_name: redash_worker
+    command: dev_worker
+    env_file:
+      - .env
+    networks:
+      - appnet
     depends_on:
-      - redash-server
-    env_file: .env
-    networks:
-      - dbnet
+      - redash_server
+    environment:
+      - REDASH_DATABASE_URL=postgresql://${REDASH_DB_USER}:${REDASH_DB_PASSWORD}@postgres:5432/${REDASH_DB_NAME}
+      - REDASH_REDIS_URL=redis://redis:6379/0
+      - PYTHONUNBUFFERED=1
+      - REDASH_COOKIE_SECRET=${REDASH_COOKIE_SECRET}
+      - REDASH_SECRET_KEY=${REDASH_SECRET_KEY}
+    
 
-  redash-worker:
-    image: redash/redash:10.1.0.b50633
-    command: worker
+  # === Redash Scheduler (планировщик обновлений) ===
+  redash_scheduler:
+    image: redash-scheduler:latest
+    container_name: redash_scheduler
+    command: dev_scheduler
+
+    env_file:
+      - .env
+    networks:
+      - appnet
     depends_on:
-      - redash-server
-    env_file: .env
-    networks:
-      - dbnet
-
-
-networks:
-  dbnet:
-    driver: bridge
+      - redash_server
+    environment:
+      - REDASH_DATABASE_URL=postgresql://${REDASH_DB_USER}:${REDASH_DB_PASSWORD}@postgres:5432/${REDASH_DB_NAME}
+      - REDASH_REDIS_URL=redis://redis:6379/0
+      - PYTHONUNBUFFERED=1
+      - REDASH_COOKIE_SECRET=${REDASH_COOKIE_SECRET}
+      - REDASH_SECRET_KEY=${REDASH_SECRET_KEY}
+    
 
 volumes:
   postgres-data: {}
+
+networks:
+  appnet:
+    driver: bridge
