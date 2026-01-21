@@ -4,4 +4,4 @@ docker compose up
 
 docker exec parser_site python manage.py migrate
 
-docker exec redash-server bin/run ./manage.py database create_tables
+docker exec redash_server bin/run ./manage.py database create_tables

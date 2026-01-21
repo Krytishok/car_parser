@@ -30,8 +30,9 @@ services:
     image: parser_site
     container_name: parser_site
     restart: always
-    command:
-     python manage.py runserver 0.0.0.0:8000
+    command: >
+      sh -c "python manage.py migrate &&
+             python manage.py runserver 0.0.0.0:8000"
     env_file:
       - .env
     networks:
@@ -57,9 +58,10 @@ services:
 
   # === Redash Server (фронтенд + API) ===
   redash_server:
-    image: redash-server:latest
+    image: redash/redash:25.8.0
     container_name: redash_server
-    command: "dev_server"
+    command:
+     "dev_server"
     env_file:
       - .env
     networks:
@@ -80,7 +82,7 @@ services:
 
   # === Redash Worker (выполнение запросов) ===
   redash_worker:
-    image: redash-worker:latest
+    image: redash/redash:25.8.0
     container_name: redash_worker
     command: dev_worker
     env_file:
@@ -99,7 +101,7 @@ services:
 
   # === Redash Scheduler (планировщик обновлений) ===
   redash_scheduler:
-    image: redash-scheduler:latest
+    image: redash/redash:25.8.0
     container_name: redash_scheduler
     command: dev_scheduler
 
@@ -109,6 +111,23 @@ services:
       - appnet
     depends_on:
       - redash_server
+    environment:
+      - REDASH_DATABASE_URL=postgresql://${REDASH_DB_USER}:${REDASH_DB_PASSWORD}@postgres:5432/${REDASH_DB_NAME}
+      - REDASH_REDIS_URL=redis://redis:6379/0
+      - PYTHONUNBUFFERED=1
+      - REDASH_COOKIE_SECRET=${REDASH_COOKIE_SECRET}
+      - REDASH_SECRET_KEY=${REDASH_SECRET_KEY}
+
+  redash_init:
+    image: redash/redash:25.8.0
+    container_name: redash_init
+    command: "bin/run ./manage.py database create_tables"
+    env_file:
+      - .env
+    networks:
+      - appnet
+    depends_on:
+      - redash_scheduler
     environment:
       - REDASH_DATABASE_URL=postgresql://${REDASH_DB_USER}:${REDASH_DB_PASSWORD}@postgres:5432/${REDASH_DB_NAME}
       - REDASH_REDIS_URL=redis://redis:6379/0
