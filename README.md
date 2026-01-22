@@ -1,7 +1,68 @@
-TO START USE THESE COMMANDS:
+# Автомобильный парсер + аналитика с Redash
 
-docker compose up
+Проект состоит из Django-приложения для парсинга объявлений об автомобилях и Redash — платформы для визуализации и анализа данных. Всё развертывается с помощью Docker Compose.
 
-docker exec parser_site python manage.py migrate
+## 🚀 Быстрый запуск
 
-docker exec redash_server bin/run ./manage.py database create_tables
+1. **Создайте файл `.env`** в корне проекта, используя пример ниже.
+2. Запустите контейнеры:
+   ```bash
+   docker-compose up --build
+   ```
+
+
+## Пример `.env` файла
+
+```env
+DJANGO_SECRET_KEY=django-insecure-b**--my8i56mgt=hydv4#psyap02ne#hkdh51x2re*r$d3)yek
+DJANGO_ALLOWED_HOSTS=127.0.0.1 localhost [::1]
+
+DATABASE_NAME=parser_db
+DATABASE_USERNAME=parser
+DATABASE_PASSWORD=1234
+DATABASE_HOST=postgres
+DATABASE_PORT=5432
+
+REDASH_DB_NAME=redash_metadata
+REDASH_DB_USER=redash
+REDASH_DB_PASSWORD=redashpass
+
+REDASH_DATABASE_URL=postgresql://parser:1234@postgres:5432/parser_db
+REDASH_REDIS_URL=redis://redis:6379/0
+REDASH_COOKIE_SECRET=redash-secret-12345
+REDASH_SECRET_KEY=redash-secret-67890
+
+PYTHONUNBUFFERED=0
+REDASH_HOST=http://localhost:5001
+REDASH_MAIL_DEFAULT_SENDER=noreply@example.com
+```
+
+> **Важно**: замените секретные ключи на свои в продакшене!
+
+## Наполнение базы данных
+
+После запуска контейнеров:
+
+1. Перейдите в браузере на [http://localhost:8000](http://localhost:8000).
+2. Запустите парсер (например, до 50 страниц).
+3. Парсер будет постепенно наполнять базу данных автомобилями.
+
+<img width="1915" height="1100" alt="image" src="https://github.com/user-attachments/assets/52ddb8f9-ed2e-4589-a610-6948dd0d7ef4" />
+
+
+> Процесс может занять несколько минут.
+
+## Аналитика с Redash
+
+Пока парсер работает, вы можете уже начать анализировать данные:
+
+- Откройте [http://localhost:5001](http://localhost:5001)
+- Авторизуйтесь (первый пользователь станет администратором)
+- Подключитесь к источнику данных (`parser_db`) и создайте дашборд
+
+### Пример дашборда
+
+<img width="1920" height="999" alt="image" src="https://github.com/user-attachments/assets/97fa1b3d-74db-4c8d-bfbc-604992c0a199" />
+
+
+Вы можете строить графики по брендам, ценам, годам выпуска, пробегу и другим параметрам.
