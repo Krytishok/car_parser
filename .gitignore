@@ -18,6 +18,9 @@ ENV/
 env.bak/
 venv.bak/
 
+#Parser_files
+auction_parser/cars/json_results/
+
 # IDE
 .vscode/
 .idea/
